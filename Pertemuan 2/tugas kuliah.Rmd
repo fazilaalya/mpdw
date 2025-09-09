@@ -1,0 +1,242 @@
+---
+title: "IPM Kalimantan Timur 2010-2024"
+author: "Fazila Alya Dilta Hareer G1401231007"
+date: "2025-09-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 
+```{r}
+# memanggil library yang dibutuhkan
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(lmtest)
+library(TTR)
+library(forecast)
+library(orcutt)
+library(HoRM)
+```
+
+## Input Data
+data yang digunnakan yaitu IPM (Indeks Pembangunan Manusia) Provinsi Kalimantan Timur
+```{r}
+# membaca data dari file Excel
+data <- read_excel("C:\\Users\\ASUS\\Documents\\data IPM.xlsx")
+data
+```
+```{r}
+# melihat struktur data
+str(data)
+```
+
+## Eksplorasi Data
+```{r}
+data.ts <- ts(data$IPM, start = c(2010), frequency = 1)
+data.ts
+```
+```{r}
+plot(data.ts, main = "Indeks Pembangunan Manusia (IPM) Kalimantan Timur 2010-2024", ylab = "IPM", xlab = "Tahun")
+points(data.ts, col = "red", pch = 19)
+```
+
+## Double Moving Average (DMA)
+```{r}
+dt.sma <- SMA(data.ts, n=3)
+dma <- SMA(dt.sma, n = 3)
+At <- 2*dt.sma - dma
+Bt <- 2/(3-1)*(dt.sma - dma)
+dt.dma<- At+Bt
+dt.ramal<- c(NA, dt.dma)
+
+t = 1:5
+f = c()
+
+for (i in t) {
+  f[i] = At[length(At)] + Bt[length(Bt)]*(i)
+}
+
+dt.gab <- cbind(aktual = c(data.ts,rep(NA,5)), 
+                pemulusan1 = c(dt.sma,rep(NA,5)),
+                pemulusan2 = c(dt.dma, rep(NA,5)),
+                At = c(At, rep(NA,5)), 
+                Bt = c(Bt,rep(NA,5)),
+                ramalan = c(dt.ramal, f[-1]))
+dt.gab
+```
+```{r}
+# plot time series
+ts.plot(dt.gab[,1], xlab="Time Period ", ylab="IPM", 
+        main= "DMA N = 3 Data IPM", ylim=c(70,100))
+points(dt.gab[,1])
+points(dt.gab[,3])
+points(dt.gab[,6])
+lines(dt.gab[,3],col="green",lwd=2)
+lines(dt.gab[,6],col="red",lwd=2)
+legend("topleft",c("data aktual","data pemulusan","data peramalan"), 
+       lty=8, col=c("black","green","red"), cex=0.8)
+```
+```{r}
+# akurasi metode DMA
+error.dma = data.ts-dt.ramal[1:length(data.ts)]
+SSE.dma = sum(error.dma[6:length(data.ts)]^2)
+MSE.dma = mean(error.dma[6:length(data.ts)]^2)
+MAPE.dma = mean(abs((error.dma[6:length(data.ts)]/data.ts[6:length(data.ts)])*100))
+
+akurasi.dma <- matrix(c(SSE.dma, MSE.dma, MAPE.dma))
+row.names(akurasi.dma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi.dma) <- c("Akurasi m = 3")
+akurasi.dma
+```
+
+## Double Exponential Smoothing (DES)
+```{r}
+# Membagi training dan testing
+training<-data[1:10,2]
+testing<-data[11:15,2]
+
+# data time series
+training.ts<-ts(training)
+testing.ts<-ts(testing,start=11)
+```
+```{r}
+# eksplorasi data
+plot(data.ts, col="red",main="Plot Semua Data")
+points(data.ts)
+
+plot(training.ts, col="blue",main="Plot data Training")
+points(training.ts)
+
+plot(testing.ts, col="green",main="Plot data Testing")
+points(testing.ts)
+```
+# DES dengan Lamda & Gamma Optimum
+```{r}
+des.opt<- HoltWinters(training.ts, gamma = FALSE)
+des.opt
+```
+```{r}
+plot(des.opt)
+legend("topleft", c("Data Aktual", "Peramalan"), col = c("black", "red"), 
+       lty = c(1,1))
+```
+```{r}
+# peramalan
+ramalandesopt<- forecast(des.opt, h=7)
+ramalandesopt
+```
+## Akurasi Metode DES
+# Akurasi Data Training
+```{r}
+ssedes.train<-des.opt$SSE
+msedes.train<-ssedes.train/length(training.ts)
+sisaandes<-ramalandesopt$residuals
+head(sisaandes)
+```
+```{r}
+mapedes.train <- sum(abs(sisaandes[3:length(training.ts)]/training.ts[3:length(training.ts)])*100)/length(training.ts)
+
+akurasides.opt <- matrix(c(ssedes.train,msedes.train,mapedes.train))
+row.names(akurasides.opt)<- c("SSE", "MSE", "MAPE")
+colnames(akurasides.opt) <- c("Akurasi lamda dan gamma optimum")
+akurasides.opt
+```
+# Akurasi Data Testing
+```{r}
+selisihdesopt<-ramalandesopt$mean-testing.ts
+selisihdesopt
+```
+```{r}
+SSEtestingdesopt<-sum(selisihdesopt^2)
+SSEtestingdesopt<-SSEtestingdesopt/length(testing.ts)
+MAPEtestingdesopt<-sum(abs(selisihdesopt/testing.ts)*100)/length(testing.ts)
+
+akurasiDesTesting <- matrix(c(SSEtestingdesopt,SSEtestingdesopt,MAPEtestingdesopt))
+row.names(akurasiDesTesting)<- c("SSE", "MSE", "MAPE")
+colnames(akurasiDesTesting) <- c("Akurasi lamda dan gamma optimum")
+akurasiDesTesting
+```
+```{r}
+# Perbandingan Akurasi Metode DMA dan DES
+cbind(akurasi.dma, akurasides.opt)
+```
+Berdasarkan perbandingan akurasi tersebut, terlihat nilai SSE, MSE, dan MAPE metode DES lebih kecil dibandingkan dengan metode DMA. Oleh karena itu, metode peramalan dan pemulusan yang terbaik antara keduanya adalah dengan metode DES.
+
+```{r}
+# Scatter Plot Tahun vs Nilai IPM
+plot(data$Tahun, data$IPM, pch = 20, col = "blue",
+     main = "Scatter Plot Tahun vs Nilai IPM",
+     xlab = "Tahun",
+     ylab = "Nilai IPM")
+```
+```{r}
+# Nilai Korelasi
+cor(data$Tahun, data$IPM)
+```
+Berdasarkan scatter plot di atas terlihat adanya hubungan / korelasi positif antara peubah tahun dengan nilai IPM, terlihat titik-titik pada plot yang naik ke arah kanan atas. Hal tersebut juga diperkuat dengan hasil perhitungan aplikasi R di mana didapatkan nilai korelasi sebesar 0.9950741.
+
+## Pemodelan Regresi Linier
+```{r}
+# Membuat model regresi linier
+model <- lm(IPM ~ Tahun, data = data)
+summary(model)
+```
+Model yang dihasilkan adalah
+                   yi=-946.9167+0.5067xt
+Berdasarkan ringkasan model dapat diketahui bahwa hasil uji F memiliki p-value < α (5%). Artinya, minimal terdapat satu variabel yang berpengaruh nyata terhadap model. Hasil uji-t parsial kedua parameter regresi, yaitu intersep dan koefisien regresi juga menunjukkan hal yang sama, yaitu memiliki p-value < α (5%) sehingga nyata dalam taraf 5%. Selanjutnya dapat dilihat juga nilai R2=0.9902. Artinya, sebesar 99.02% keragaman nilai IPM dapat dijelaskan oleh peubah tahun. Hasil ini menunjukkan hasil yang bagus, seolah mendapatkan hasil terbaik. Namun, kita perlu melakukan uji terhadap sisaannya seperti berikut ini.
+
+```{r}
+# Sisaan dan fitted value
+sisaan <- residuals(model)
+fitValue <- predict(model)
+
+# Diagnostik dengan eksploratif
+par(mfrow = c(2,2))
+qqnorm(sisaan)
+qqline(sisaan, col = "steelblue", lwd = 2)
+plot(fitValue, sisaan, col = "steelblue", pch = 20, xlab = "Sisaan", ylab = "Fitted Values", main = "Sisaan vs Fitted Values")
+abline(a = 0, b = 0, lwd = 2)
+hist(sisaan, col = "steelblue")
+plot(seq(1,15,1), sisaan, col = "steelblue", pch = 20, xlab = "Sisaan", ylab = "Order", main = "Sisaan vs Order")
+lines(seq(1,15,1), sisaan, col = "red")
+abline(a = 0, b = 0, lwd = 2)
+```
+Berdasarkan empat plot di atas, kita bisa menyimpulkan beberapa hal mengenai model yang dianalisis. Dua plot di sisi kiri berkaitan dengan asumsi kenormalan sisaan. Normal Q-Q Plot menunjukkan bahwa titik-titik data tidak sepenuhnya mengikuti garis lurus, meskipun cukup dekat, mengindikasikan bahwa sisaan mendekati sebaran normal namun tidak sepenuhnya normal. Hal ini diperkuat oleh Histogram of sisaan yang terlihat agak miring dan tidak simetris sempurna, sehingga distribusi sisaan tidak bisa dikatakan normal secara penuh.
+
+Sementara itu, dua plot di sisi kanan digunakan untuk memeriksa autokorelasi. Plot Sisaan vs Fitted Values menunjukkan sebaran yang tidak acak karena terlihat adanya pola tertentu di sekitar garis nol, menandakan kemungkinan adanya autokorelasi atau varians yang tidak konstan. Indikasi ini diperkuat oleh plot Sisaan vs Order, yang menampilkan fluktuasi pola yang berulang, mengisyaratkan bahwa nilai sisaan saat ini mungkin dipengaruhi oleh sisaan sebelumnya. Oleh karena itu, diperlukan uji formal lebih lanjut untuk mengonfirmasi kedua temuan ini, seperti uji normalitas sisaan (misalnya, uji Shapiro-Wilk) dan analisis autokorelasi menggunakan plot ACF dan PACF.
+
+```{r}
+# Uji Normalitas Sisaan dengan Shapiro-Wilk
+# H0: sisaan mengikuti sebaran normal
+# H1: sisaan tidak mengikuti sebaran normal
+shapiro.test(sisaan)
+```
+```{r}
+ks_test <- ks.test(sisaan, "pnorm", mean = mean(sisaan), sd = sd(sisaan))
+print(ks_test)
+```
+Berdasarkan hasil uji formal, yaitu uji Shapiro-Wilk dan Kolmogorov-Smirnov, didapatkan nilai p-value yang lebih besar dari tingkat signifikansi α (0,05 atau 5%). Ini menunjukkan bahwa tidak ada cukup bukti untuk menolak hipotesis nol (H₀). Dengan kata lain, kita dapat menyimpulkan bahwa sisaan (residual) model berdistribusi normal. Selanjutnya, untuk memastikan tidak ada korelasi antar sisaan, akan dilakukan uji autokorelasi menggunakan uji Durbin-Watson serta analisis visual dengan plot ACF (Autocorrelation Function) dan PACF (Partial Autocorrelation Function).
+
+```{r}
+# Plot ACF dan PACF sisaan
+par(mfrow = c(1,2))
+acf(sisaan, main = "ACF of Residuals")
+pacf(sisaan, main = "PACF of Residuals")
+```
+Berdasarkan plot **ACF** dan **PACF**, terdapat indikasi kuat adanya **autokorelasi** pada sisaan. Plot **ACF** menunjukkan bahwa nilai autokorelasi pada **lag 1** berada **di luar batas signifikansi**, yang merupakan bukti utama adanya korelasi sisaan dengan nilai-nilai sisaan sebelumnya. Sementara itu, plot **PACF** memang menunjukkan bahwa sebagian besar lag berada di dalam batas, tetapi indikasi adanya pengaruh pada lag awal memperkuat dugaan autokorelasi.
+
+Secara keseluruhan, kedua plot ini memberikan bukti visual bahwa sisaan **belum sepenuhnya acak** dan masih memiliki pola yang saling berkaitan. Untuk mengonfirmasi temuan ini, selanjutnya akan dilakukan **uji Durbin-Watson**, yang merupakan uji statistik formal untuk mendeteksi autokorelasi serial pada sisaan. 
+
+```{r}
+# Uji Durbin-Watson
+# H0: tidak ada autokorelasi
+# H1: ada autokorelasi
+dwtest(model)
+```
+Nilai p−value (0.09748): Nilai ini lebih besar dari tingkat signifikansi yang umum digunakan, yaitu α=0.05. Dalam uji statistik, ketika p−value>α, kita gagal menolak hipotesis nol (H₀). Hipotesis nol pada uji Durbin-Watson menyatakan bahwa tidak ada autokorelasi serial. Dengan demikian, kita tidak memiliki cukup bukti statistik untuk menyatakan bahwa autokorelasi ada.
+
+Nilai Durbin-Watson (DW) (1.5204): Nilai DW berkisar antara 0 hingga 4. Nilai yang mendekati 2 menunjukkan tidak adanya autokorelasi. Nilai yang mendekati 0 mengindikasikan autokorelasi positif, sedangkan nilai yang mendekati 4 mengindikasikan autokorelasi negatif. Nilai DW sebesar 1.5204 cukup dekat dengan 2, yang secara visual mendukung kesimpulan dari p−value bahwa sisaan model cukup acak dan tidak saling berkorelasi.
